@@ -1,3 +1,4 @@
+
 // Definindo as constantes e seus nomes.
 const int LDR = 1;
 const int LED_AZUL = 12;
