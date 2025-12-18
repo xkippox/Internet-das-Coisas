@@ -1,1 +1,116 @@
 
+#include <Wire.h>
+#include <Adafruit_GFX.h>
+#include <Adafruit_SSD1306.h>
+#include <DHT.h>
+
+// Configurações do display OLED
+#define SCREEN_WIDTH 128
+#define SCREEN_HEIGHT 64
+#define OLED_RESET -1  // não estou usando pino de reset físico
+
+// Objeto do display
+Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
+
+// Configurações do sensor DHT
+#define DHTPIN 15      // pino onde o DHT está ligado
+#define DHTTYPE DHT11 // modelo do sensor
+
+DHT dht(DHTPIN, DHTTYPE);
+
+// Botões e LED
+#define BOTAO_UP   6
+#define BOTAO_DOWN 7
+#define LED_PIN    13
+
+// Variáveis do sistema
+float temperatura = 0; // guarda a última temperatura válida
+int limiar = 30;       // temperatura limite pra ligar o LED
+
+// Controle de tempo pra não ficar lendo o sensor toda hora
+unsigned long lastRead = 0;
+const unsigned long intervalo = 2000; // 2 segundos
+
+void setup() {
+  Serial.begin(115200); // abre o serial
+
+  // Botões com pull-up interno (pressionado = LOW)
+  pinMode(BOTAO_UP, INPUT_PULLUP);
+  pinMode(BOTAO_DOWN, INPUT_PULLUP);
+
+  // LED como saída
+  pinMode(LED_PIN, OUTPUT);
+
+  // Inicia o sensor
+  dht.begin();
+
+  // Inicia o display OLED
+  display.begin(SSD1306_SWITCHCAPVCC, 0x3C);
+  display.clearDisplay();
+  display.setTextSize(1);
+  display.setTextColor(WHITE);
+
+  Serial.println("Sistema iniciado");
+}
+
+void loop() {
+
+  // Lê a temperatura a cada 2 segundos
+  if (millis() - lastRead >= intervalo) {
+    lastRead = millis();
+
+    float t = dht.readTemperature();
+
+    // Só atualiza se a leitura não der erro
+    if (!isnan(t)) {
+      temperatura = t;
+    }
+  }
+
+  // Botão pra aumentar o limiar
+  if (digitalRead(BOTAO_UP) == LOW) {
+    limiar++;
+    delay(250); // evita leitura dupla do botão
+  }
+
+  // Botão pra diminuir o limiar
+  if (digitalRead(BOTAO_DOWN) == LOW) {
+    limiar--;
+    delay(250);
+  }
+
+  // Liga o LED se passar do limite
+  if (temperatura >= limiar) {
+    digitalWrite(LED_PIN, HIGH);
+  } else {
+    digitalWrite(LED_PIN, LOW);
+  }
+
+  // Mostra tudo no Serial Monitor
+  Serial.print("Temp: ");
+  Serial.print(temperatura);
+  Serial.print(" C | Limiar: ");
+  Serial.print(limiar);
+  Serial.print(" | LED: ");
+  Serial.println(temperatura >= limiar ? "ON" : "OFF");
+
+  // Atualiza o display
+  display.clearDisplay();
+
+  display.setCursor(0, 12);
+  display.print("Temp: ");
+  display.print(temperatura);
+  display.print(" C");
+
+  display.setCursor(0, 32);
+  display.print("Limiar: ");
+  display.print(limiar);
+  display.print(" C");
+
+  display.setCursor(0, 52);
+  display.print("LED: ");
+  display.print(temperatura >= limiar ? "ON" : "OFF");
+
+  display.display();
+}
+
