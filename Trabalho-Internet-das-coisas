@@ -1,0 +1,193 @@
+#include <Wire.h>
+#include <Adafruit_GFX.h>
+#include <Adafruit_SSD1306.h>
+#include <Preferences.h>
+
+/* ================= DISPLAY ================= */
+#define SCREEN_WIDTH 128
+#define SCREEN_HEIGHT 64
+Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, -1);
+
+/* ================= MEMÓRIA ================= */
+Preferences prefs;
+
+/* ================= PINOS ================= */
+#define P1_LEFT   6
+#define P1_RIGHT  4
+#define P2_LEFT   2
+#define P2_RIGHT  3
+#define BTN_LAUNCH 7
+#define BUZZER 17
+
+/* ================= PLATAFORMAS ================= */
+const int PLATFORM_WIDTH = 24;
+const int PLATFORM_SPEED = 3;
+
+int p1X = 52;
+int p2X = 52;
+
+const int P1_Y = 58;
+const int P2_Y = 4;
+
+/* ================= BOLA ================= */
+float ballX, ballY, velX, velY;
+bool ballLaunched = false;
+
+/* ================= VELOCIDADE ================= */
+#define SPEED_INCREMENT 0.6
+#define MAX_BALL_SPEED  6.0
+
+/* ================= GAME ================= */
+unsigned long score = 0;
+unsigned long highScore = 0;
+
+/* ================= ESTADO ================= */
+enum GameState { MENU, PLAYING };
+GameState gameState = MENU;
+
+/* ================= FUNÇÕES ================= */
+void beep(int f, int d) {
+  tone(BUZZER, f, d);
+}
+
+void increaseBallSpeed() {
+  if (abs(velY) < MAX_BALL_SPEED)
+    velY += (velY > 0 ? SPEED_INCREMENT : -SPEED_INCREMENT);
+
+  if (abs(velX) < MAX_BALL_SPEED)
+    velX += (velX > 0 ? 0.2 : -0.2);
+}
+
+/* ================= RESET ================= */
+void resetBall() {
+  ballX = SCREEN_WIDTH / 2;
+  ballY = SCREEN_HEIGHT / 2;
+  velX = 1.5;
+  velY = 2.0;
+  score = 0;
+  ballLaunched = true;
+}
+
+/* ================= MENU ================= */
+void drawMenu() {
+  display.clearDisplay();
+  display.setTextSize(1);
+  display.setTextColor(SSD1306_WHITE);
+
+  display.setCursor(24, 12);
+  display.println("PINBALL CO-OP");
+
+  display.setCursor(42, 30);
+  display.println(">> PLAY <<");
+
+  display.setCursor(0, 56);
+  display.print("REC: ");
+  display.print(highScore);
+
+  display.display();
+}
+
+/* ================= INPUT ================= */
+void handleInput() {
+  if (gameState == MENU) {
+    if (digitalRead(BTN_LAUNCH) == LOW) {
+      resetBall();
+      gameState = PLAYING;
+      beep(1200, 120);
+      delay(250);
+    }
+    return;
+  }
+
+  if (digitalRead(P1_LEFT) == LOW)  p1X -= PLATFORM_SPEED;
+  if (digitalRead(P1_RIGHT) == LOW) p1X += PLATFORM_SPEED;
+  if (digitalRead(P2_LEFT) == LOW)  p2X -= PLATFORM_SPEED;
+  if (digitalRead(P2_RIGHT) == LOW) p2X += PLATFORM_SPEED;
+
+  p1X = constrain(p1X, 0, SCREEN_WIDTH - PLATFORM_WIDTH);
+  p2X = constrain(p2X, 0, SCREEN_WIDTH - PLATFORM_WIDTH);
+}
+
+/* ================= FÍSICA ================= */
+void updateBall() {
+  if (!ballLaunched) return;
+
+  ballX += velX;
+  ballY += velY;
+
+  if (ballX <= 2 || ballX >= SCREEN_WIDTH - 2) {
+    velX *= -1;
+    beep(800, 20);
+  }
+
+  if (ballY >= P1_Y - 2 && ballX >= p1X && ballX <= p1X + PLATFORM_WIDTH && velY > 0) {
+    velY *= -1;
+    increaseBallSpeed();
+    score += 10;
+    beep(1500, 30);
+  }
+
+  if (ballY <= P2_Y + 4 && ballX >= p2X && ballX <= p2X + PLATFORM_WIDTH && velY < 0) {
+    velY *= -1;
+    increaseBallSpeed();
+    score += 10;
+    beep(1500, 30);
+  }
+
+  if (ballY < 0 || ballY > SCREEN_HEIGHT) {
+    ballLaunched = false;
+
+    if (score > highScore) {
+      highScore = score;
+      prefs.putULong("record", highScore);
+    }
+
+    gameState = MENU;
+    beep(300, 300);
+  }
+}
+
+/* ================= RENDER GAME ================= */
+void drawGame() {
+  display.clearDisplay();
+
+  display.setCursor(0, 0);
+  display.print("Score: ");
+  display.print(score);
+
+  display.fillCircle(ballX, ballY, 2, SSD1306_WHITE);
+  display.fillRect(p1X, P1_Y, PLATFORM_WIDTH, 3, SSD1306_WHITE);
+  display.fillRect(p2X, P2_Y, PLATFORM_WIDTH, 3, SSD1306_WHITE);
+
+  display.display();
+}
+
+/* ================= SETUP ================= */
+void setup() {
+  pinMode(P1_LEFT, INPUT_PULLUP);
+  pinMode(P1_RIGHT, INPUT_PULLUP);
+  pinMode(P2_LEFT, INPUT_PULLUP);
+  pinMode(P2_RIGHT, INPUT_PULLUP);
+  pinMode(BTN_LAUNCH, INPUT_PULLUP);
+  pinMode(BUZZER, OUTPUT);
+
+  Wire.begin();
+  display.begin(SSD1306_SWITCHCAPVCC, 0x3C);
+
+  prefs.begin("pinball", false);
+  highScore = prefs.getULong("record", 0);
+}
+
+/* ================= LOOP ================= */
+void loop() {
+  handleInput();
+
+  if (gameState == MENU)
+    drawMenu();
+  else {
+    updateBall();
+    drawGame();
+  }
+
+  delay(20);
+}
