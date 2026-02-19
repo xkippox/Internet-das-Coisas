@@ -1,0 +1,80 @@
+#include <WiFi.h>
+#include <WebServer.h>
+#include <DHT.h>
+
+// ======== CONFIG WIFI =========
+const char* ssid = "Ensino Alunos";
+const char* password = "aluno@IFCE2018";
+
+// ======== PINOS =========
+#define DHTPIN 15
+#define DHTTYPE DHT11
+#define LDRPIN 1
+
+DHT dht(DHTPIN, DHTTYPE);
+WebServer server(80);
+
+// ======== FUNÇÃO QUE ENVIA OS DADOS =========
+void enviarDados() {
+
+  float umidade = dht.readHumidity();
+  float temperatura = dht.readTemperature();
+  int luz = analogRead(LDRPIN);
+
+  // Cabeçalhos CORS
+  server.sendHeader("Access-Control-Allow-Origin", "*");
+  server.sendHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
+  server.sendHeader("Access-Control-Allow-Headers", "Content-Type");
+
+  if (isnan(umidade) || isnan(temperatura)) {
+    server.send(500, "application/json", "{\"erro\":\"Falha no sensor DHT\"}");
+    return;
+  }
+
+  String json = "{";
+  json += "\"luz\":" + String(luz) + ",";
+  json += "\"temperatura\":" + String(temperatura, 2) + ",";
+  json += "\"umidade\":" + String(umidade, 2);
+  json += "}";
+
+  server.send(200, "application/json", json);
+}
+
+// ======== RESPOSTA PARA OPTIONS (CORS) =========
+void handleOptions() {
+  server.sendHeader("Access-Control-Allow-Origin", "*");
+  server.sendHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
+  server.sendHeader("Access-Control-Allow-Headers", "Content-Type");
+  server.send(204);
+}
+
+void setup() {
+  Serial.begin(115200);
+  dht.begin();
+
+  WiFi.begin(ssid, password);
+  Serial.print("Conectando ao WiFi");
+
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print(".");
+  }
+
+  Serial.println("\nConectado!");
+  Serial.print("IP do ESP: ");
+  Serial.println(WiFi.localIP());
+
+  // ROTAS
+  server.on("/", HTTP_GET, enviarDados);
+  server.on("/monitoramento", HTTP_GET, enviarDados);
+
+  server.on("/", HTTP_OPTIONS, handleOptions);
+  server.on("/monitoramento", HTTP_OPTIONS, handleOptions);
+
+  server.begin();
+  Serial.println("Servidor iniciado!");
+}
+
+void loop() {
+  server.handleClient();
+}
