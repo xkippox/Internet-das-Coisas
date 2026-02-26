@@ -2,34 +2,49 @@
 #include <WebServer.h>
 #include <DHT.h>
 
-// ======== CONFIG WIFI =========
+// ========= WIFI =========
 const char* ssid = "Ensino Alunos";
 const char* password = "aluno@IFCE2018";
 
-// ======== PINOS =========
+// ========= PINOS =========
 #define DHTPIN 15
 #define DHTTYPE DHT11
 #define LDRPIN 1
 
-#define PIN_REFLETOR 2
-#define PIN_EXAUSTOR 4
+#define PIN_LED_AZUL 12       // Refletor
+#define PIN_LED_EXAUSTOR 13   // Exaustor
 
 DHT dht(DHTPIN, DHTTYPE);
 WebServer server(80);
 
-// ======== VARIÁVEIS DOS ATUADORES =========
+// ========= VARIÁVEIS =========
 int refletor = 0;
 int exaustor = 0;
 
-// ======== GET /monitoramento =========
+// ========= CORS =========
+void enviarCORS() {
+  server.sendHeader("Access-Control-Allow-Origin", "*");
+  server.sendHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+  server.sendHeader("Access-Control-Allow-Headers", "Content-Type");
+}
+
+void handleOptions() {
+  enviarCORS();
+  server.send(204);
+}
+
+// ========= GET /monitoramento =========
 void enviarDados() {
 
   float umidade = dht.readHumidity();
   float temperatura = dht.readTemperature();
   int luz = analogRead(LDRPIN);
 
+  enviarCORS();
+
   if (isnan(umidade) || isnan(temperatura)) {
-    server.send(500, "application/json", "{\"erro\":\"Falha no sensor DHT\"}");
+    server.send(500, "application/json",
+                "{\"erro\":\"Falha no sensor DHT\"}");
     return;
   }
 
@@ -44,7 +59,7 @@ void enviarDados() {
   server.send(200, "application/json", json);
 }
 
-// ======== FUNÇÃO AUXILIAR DE VALIDAÇÃO =========
+// ========= VALIDAÇÃO =========
 bool validarValor(String valorStr, int &valorConvertido) {
 
   if (valorStr == "") return false;
@@ -57,52 +72,64 @@ bool validarValor(String valorStr, int &valorConvertido) {
   return true;
 }
 
-// ======== POST /refletor =========
+// ========= POST /refletor =========
 void alterarRefletor() {
 
-  if (!server.hasArg("valor")) {
+  enviarCORS();
+
+  if (!server.hasArg("intensidade")) {
     server.send(400, "text/plain", "Erro: valor ausente");
     return;
   }
 
   int novoValor;
-  if (!validarValor(server.arg("valor"), novoValor)) {
+
+  if (!validarValor(server.arg("intensidade"), novoValor)) {
     server.send(400, "text/plain", "Erro: valor inválido (0-255)");
     return;
   }
 
   refletor = novoValor;
-  analogWrite(PIN_REFLETOR, refletor);
+
+  // PWM LED azul
+  ledcWrite(PIN_LED_AZUL, refletor);
 
   server.send(200, "text/plain", "Refletor alterado");
 }
 
-// ======== POST /exaustor =========
+// ========= POST /exaustor =========
 void alterarExaustor() {
 
-  if (!server.hasArg("valor")) {
+  enviarCORS();
+
+  if (!server.hasArg("potencia")) {
     server.send(400, "text/plain", "Erro: valor ausente");
     return;
   }
 
   int novoValor;
-  if (!validarValor(server.arg("valor"), novoValor)) {
+
+  if (!validarValor(server.arg("potencia"), novoValor)) {
     server.send(400, "text/plain", "Erro: valor inválido (0-255)");
     return;
   }
 
   exaustor = novoValor;
-  analogWrite(PIN_EXAUSTOR, exaustor);
+
+  // PWM LED exaustor
+  ledcWrite(PIN_LED_EXAUSTOR, exaustor);
 
   server.send(200, "text/plain", "Exaustor alterado");
 }
 
+// ========= SETUP =========
 void setup() {
   Serial.begin(115200);
   dht.begin();
 
-  pinMode(PIN_REFLETOR, OUTPUT);
-  pinMode(PIN_EXAUSTOR, OUTPUT);
+  // Configura PWM nos dois LEDs (Core novo ESP32)
+  ledcAttach(PIN_LED_AZUL, 5000, 8);
+  ledcAttach(PIN_LED_EXAUSTOR, 5000, 8);
 
   WiFi.begin(ssid, password);
   Serial.print("Conectando ao WiFi");
@@ -112,21 +139,27 @@ void setup() {
     Serial.print(".");
   }
 
-  Serial.println("\nConectado!");
+  Serial.println("\nWiFi conectado!");
   Serial.print("IP do ESP: ");
   Serial.println(WiFi.localIP());
 
-  // ROTAS
-  server.on("/", HTTP_GET, enviarDados); // <-- adiciona isso
+  // Rotas
+  server.on("/", HTTP_GET, enviarDados);
   server.on("/monitoramento", HTTP_GET, enviarDados);
 
   server.on("/refletor", HTTP_POST, alterarRefletor);
   server.on("/exaustor", HTTP_POST, alterarExaustor);
 
+  // CORS preflight
+  server.on("/monitoramento", HTTP_OPTIONS, handleOptions);
+  server.on("/refletor", HTTP_OPTIONS, handleOptions);
+  server.on("/exaustor", HTTP_OPTIONS, handleOptions);
+
   server.begin();
   Serial.println("Servidor iniciado!");
 }
 
+// ========= LOOP =========
 void loop() {
   server.handleClient();
 }
