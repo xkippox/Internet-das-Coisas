@@ -11,9 +11,8 @@ const char* password = "aluno@IFCE2018";
 #define DHTTYPE DHT11
 #define LDRPIN 1
 
-#define PIN_REFLETOR 2
-#define PIN_EXAUSTOR 4
-#define PIN_LED_AZUL 12   // LED azul PWM
+#define PIN_LED_AZUL 12       // Refletor
+#define PIN_LED_EXAUSTOR 13   // Exaustor
 
 DHT dht(DHTPIN, DHTTYPE);
 WebServer server(80);
@@ -21,11 +20,6 @@ WebServer server(80);
 // ========= VARIÁVEIS =========
 int refletor = 0;
 int exaustor = 0;
-
-// ========= CONFIG PWM (ESP32) =========
-const int canalPWM = 0;
-const int freqPWM = 5000;
-const int resolucaoPWM = 8; // 0-255
 
 // ========= CORS =========
 void enviarCORS() {
@@ -97,8 +91,9 @@ void alterarRefletor() {
 
   refletor = novoValor;
 
-  // PWM no LED azul
+  // PWM LED azul
   ledcWrite(PIN_LED_AZUL, refletor);
+
   server.send(200, "text/plain", "Refletor alterado");
 }
 
@@ -120,7 +115,9 @@ void alterarExaustor() {
   }
 
   exaustor = novoValor;
-  analogWrite(PIN_EXAUSTOR, exaustor);
+
+  // PWM LED exaustor
+  ledcWrite(PIN_LED_EXAUSTOR, exaustor);
 
   server.send(200, "text/plain", "Exaustor alterado");
 }
@@ -130,11 +127,9 @@ void setup() {
   Serial.begin(115200);
   dht.begin();
 
-  pinMode(PIN_REFLETOR, OUTPUT);
-  pinMode(PIN_EXAUSTOR, OUTPUT);
-
-  // Configuração PWM LED azul
-  ledcAttach(PIN_LED_AZUL, freqPWM, resolucaoPWM);
+  // Configura PWM nos dois LEDs (Core novo ESP32)
+  ledcAttach(PIN_LED_AZUL, 5000, 8);
+  ledcAttach(PIN_LED_EXAUSTOR, 5000, 8);
 
   WiFi.begin(ssid, password);
   Serial.print("Conectando ao WiFi");
