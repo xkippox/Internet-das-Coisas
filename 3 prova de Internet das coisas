@@ -2,134 +2,55 @@
 #include <WebServer.h>
 #include <DHT.h>
 
-// ========= WIFI =========
+// ======== CONFIG WIFI =========
 const char* ssid = "Ensino Alunos";
 const char* password = "aluno@IFCE2018";
 
-// ========= PINOS =========
+// ======== PINOS =========
 #define DHTPIN 15
 #define DHTTYPE DHT11
 #define LDRPIN 1
 
-#define PIN_LED_AZUL 12       // Refletor
-#define PIN_LED_EXAUSTOR 13   // Exaustor
-
 DHT dht(DHTPIN, DHTTYPE);
 WebServer server(80);
 
-// ========= VARIÁVEIS =========
-int refletor = 0;
-int exaustor = 0;
-
-// ========= CORS =========
-void enviarCORS() {
-  server.sendHeader("Access-Control-Allow-Origin", "*");
-  server.sendHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
-  server.sendHeader("Access-Control-Allow-Headers", "Content-Type");
-}
-
-void handleOptions() {
-  enviarCORS();
-  server.send(204);
-}
-
-// ========= GET /monitoramento =========
+// ======== FUNÇÃO QUE ENVIA OS DADOS =========
 void enviarDados() {
 
   float umidade = dht.readHumidity();
   float temperatura = dht.readTemperature();
   int luz = analogRead(LDRPIN);
 
-  enviarCORS();
+  // Cabeçalhos CORS
+  server.sendHeader("Access-Control-Allow-Origin", "*");
+  server.sendHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
+  server.sendHeader("Access-Control-Allow-Headers", "Content-Type");
 
   if (isnan(umidade) || isnan(temperatura)) {
-    server.send(500, "application/json",
-                "{\"erro\":\"Falha no sensor DHT\"}");
+    server.send(500, "application/json", "{\"erro\":\"Falha no sensor DHT\"}");
     return;
   }
 
   String json = "{";
   json += "\"luz\":" + String(luz) + ",";
   json += "\"temperatura\":" + String(temperatura, 2) + ",";
-  json += "\"umidade\":" + String(umidade, 2) + ",";
-  json += "\"refletor\":" + String(refletor) + ",";
-  json += "\"exaustor\":" + String(exaustor);
+  json += "\"umidade\":" + String(umidade, 2);
   json += "}";
 
   server.send(200, "application/json", json);
 }
 
-// ========= VALIDAÇÃO =========
-bool validarValor(String valorStr, int &valorConvertido) {
-
-  if (valorStr == "") return false;
-
-  int valor = valorStr.toInt();
-
-  if (valor < 0 || valor > 255) return false;
-
-  valorConvertido = valor;
-  return true;
+// ======== RESPOSTA PARA OPTIONS (CORS) =========
+void handleOptions() {
+  server.sendHeader("Access-Control-Allow-Origin", "*");
+  server.sendHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
+  server.sendHeader("Access-Control-Allow-Headers", "Content-Type");
+  server.send(204);
 }
 
-// ========= POST /refletor =========
-void alterarRefletor() {
-
-  enviarCORS();
-
-  if (!server.hasArg("intensidade")) {
-    server.send(400, "text/plain", "Erro: valor ausente");
-    return;
-  }
-
-  int novoValor;
-
-  if (!validarValor(server.arg("intensidade"), novoValor)) {
-    server.send(400, "text/plain", "Erro: valor inválido (0-255)");
-    return;
-  }
-
-  refletor = novoValor;
-
-  // PWM LED azul
-  ledcWrite(PIN_LED_AZUL, refletor);
-
-  server.send(200, "text/plain", "Refletor alterado");
-}
-
-// ========= POST /exaustor =========
-void alterarExaustor() {
-
-  enviarCORS();
-
-  if (!server.hasArg("potencia")) {
-    server.send(400, "text/plain", "Erro: valor ausente");
-    return;
-  }
-
-  int novoValor;
-
-  if (!validarValor(server.arg("potencia"), novoValor)) {
-    server.send(400, "text/plain", "Erro: valor inválido (0-255)");
-    return;
-  }
-
-  exaustor = novoValor;
-
-  // PWM LED exaustor
-  ledcWrite(PIN_LED_EXAUSTOR, exaustor);
-
-  server.send(200, "text/plain", "Exaustor alterado");
-}
-
-// ========= SETUP =========
 void setup() {
   Serial.begin(115200);
   dht.begin();
-
-  // Configura PWM nos dois LEDs (Core novo ESP32)
-  ledcAttach(PIN_LED_AZUL, 5000, 8);
-  ledcAttach(PIN_LED_EXAUSTOR, 5000, 8);
 
   WiFi.begin(ssid, password);
   Serial.print("Conectando ao WiFi");
@@ -139,27 +60,21 @@ void setup() {
     Serial.print(".");
   }
 
-  Serial.println("\nWiFi conectado!");
+  Serial.println("\nConectado!");
   Serial.print("IP do ESP: ");
   Serial.println(WiFi.localIP());
 
-  // Rotas
+  // ROTAS
   server.on("/", HTTP_GET, enviarDados);
   server.on("/monitoramento", HTTP_GET, enviarDados);
 
-  server.on("/refletor", HTTP_POST, alterarRefletor);
-  server.on("/exaustor", HTTP_POST, alterarExaustor);
-
-  // CORS preflight
+  server.on("/", HTTP_OPTIONS, handleOptions);
   server.on("/monitoramento", HTTP_OPTIONS, handleOptions);
-  server.on("/refletor", HTTP_OPTIONS, handleOptions);
-  server.on("/exaustor", HTTP_OPTIONS, handleOptions);
 
   server.begin();
   Serial.println("Servidor iniciado!");
 }
 
-// ========= LOOP =========
 void loop() {
   server.handleClient();
 }
