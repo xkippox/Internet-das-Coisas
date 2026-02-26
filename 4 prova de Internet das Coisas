@@ -1,0 +1,132 @@
+#include <WiFi.h>
+#include <WebServer.h>
+#include <DHT.h>
+
+// ======== CONFIG WIFI =========
+const char* ssid = "Ensino Alunos";
+const char* password = "aluno@IFCE2018";
+
+// ======== PINOS =========
+#define DHTPIN 15
+#define DHTTYPE DHT11
+#define LDRPIN 1
+
+#define PIN_REFLETOR 2
+#define PIN_EXAUSTOR 4
+
+DHT dht(DHTPIN, DHTTYPE);
+WebServer server(80);
+
+// ======== VARIÁVEIS DOS ATUADORES =========
+int refletor = 0;
+int exaustor = 0;
+
+// ======== GET /monitoramento =========
+void enviarDados() {
+
+  float umidade = dht.readHumidity();
+  float temperatura = dht.readTemperature();
+  int luz = analogRead(LDRPIN);
+
+  if (isnan(umidade) || isnan(temperatura)) {
+    server.send(500, "application/json", "{\"erro\":\"Falha no sensor DHT\"}");
+    return;
+  }
+
+  String json = "{";
+  json += "\"luz\":" + String(luz) + ",";
+  json += "\"temperatura\":" + String(temperatura, 2) + ",";
+  json += "\"umidade\":" + String(umidade, 2) + ",";
+  json += "\"refletor\":" + String(refletor) + ",";
+  json += "\"exaustor\":" + String(exaustor);
+  json += "}";
+
+  server.send(200, "application/json", json);
+}
+
+// ======== FUNÇÃO AUXILIAR DE VALIDAÇÃO =========
+bool validarValor(String valorStr, int &valorConvertido) {
+
+  if (valorStr == "") return false;
+
+  int valor = valorStr.toInt();
+
+  if (valor < 0 || valor > 255) return false;
+
+  valorConvertido = valor;
+  return true;
+}
+
+// ======== POST /refletor =========
+void alterarRefletor() {
+
+  if (!server.hasArg("valor")) {
+    server.send(400, "text/plain", "Erro: valor ausente");
+    return;
+  }
+
+  int novoValor;
+  if (!validarValor(server.arg("valor"), novoValor)) {
+    server.send(400, "text/plain", "Erro: valor inválido (0-255)");
+    return;
+  }
+
+  refletor = novoValor;
+  analogWrite(PIN_REFLETOR, refletor);
+
+  server.send(200, "text/plain", "Refletor alterado");
+}
+
+// ======== POST /exaustor =========
+void alterarExaustor() {
+
+  if (!server.hasArg("valor")) {
+    server.send(400, "text/plain", "Erro: valor ausente");
+    return;
+  }
+
+  int novoValor;
+  if (!validarValor(server.arg("valor"), novoValor)) {
+    server.send(400, "text/plain", "Erro: valor inválido (0-255)");
+    return;
+  }
+
+  exaustor = novoValor;
+  analogWrite(PIN_EXAUSTOR, exaustor);
+
+  server.send(200, "text/plain", "Exaustor alterado");
+}
+
+void setup() {
+  Serial.begin(115200);
+  dht.begin();
+
+  pinMode(PIN_REFLETOR, OUTPUT);
+  pinMode(PIN_EXAUSTOR, OUTPUT);
+
+  WiFi.begin(ssid, password);
+  Serial.print("Conectando ao WiFi");
+
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print(".");
+  }
+
+  Serial.println("\nConectado!");
+  Serial.print("IP do ESP: ");
+  Serial.println(WiFi.localIP());
+
+  // ROTAS
+  server.on("/", HTTP_GET, enviarDados); // <-- adiciona isso
+  server.on("/monitoramento", HTTP_GET, enviarDados);
+
+  server.on("/refletor", HTTP_POST, alterarRefletor);
+  server.on("/exaustor", HTTP_POST, alterarExaustor);
+
+  server.begin();
+  Serial.println("Servidor iniciado!");
+}
+
+void loop() {
+  server.handleClient();
+}
